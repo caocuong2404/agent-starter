@@ -2,6 +2,7 @@ import { DurableObject } from "cloudflare:workers";
 import { createWorkersAI } from "workers-ai-provider";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createAnthropic } from "@ai-sdk/anthropic";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { callable, routeAgentRequest, type Schedule } from "agents";
 import { getSchedulePrompt, scheduleSchema } from "agents/schedule";
 import { AIChatAgent, type OnChatMessageOptions } from "@cloudflare/ai-chat";
@@ -180,7 +181,7 @@ export class ChatAgent extends AIChatAgent<Env> {
           apiKey: decryptedApiKey,
           baseURL: config.base_url || undefined
         });
-        model = openai(config.model);
+        model = openai.chat(config.model);
         break;
       }
 
@@ -192,7 +193,7 @@ export class ChatAgent extends AIChatAgent<Env> {
           apiKey: decryptedApiKey,
           baseURL: config.base_url || undefined
         });
-        model = anthropic(config.model);
+        model = anthropic.chat(config.model);
         break;
       }
 
@@ -200,11 +201,12 @@ export class ChatAgent extends AIChatAgent<Env> {
         if (!config.base_url) {
           throw new Error("Custom provider missing base_url");
         }
-        const custom = createOpenAI({
+        const custom = createOpenAICompatible({
+          name: "custom",
           baseURL: config.base_url,
           apiKey: decryptedApiKey || "custom"
         });
-        model = custom(config.model);
+        model = custom.chatModel(config.model);
         break;
       }
 
