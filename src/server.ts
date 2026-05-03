@@ -1,3 +1,4 @@
+import { DurableObject } from "cloudflare:workers";
 import { createWorkersAI } from "workers-ai-provider";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createAnthropic } from "@ai-sdk/anthropic";
@@ -377,16 +378,18 @@ interface AdminStoreRpc {
 
 // ── AdminStore Durable Object ─────────────────────────────────────────
 
-export class AdminStore {
+export class AdminStore extends DurableObject {
   constructor(
-    private state: DurableObjectState,
-    private env: Env
-  ) {}
+    state: DurableObjectState,
+    env: Env
+  ) {
+    super(state, env);
+  }
 
   // ── DB helpers ────────────────────────────────────────────────────
 
   private ensureTable() {
-    this.state.storage.sql.exec(`
+    this.ctx.storage.sql.exec(`
       CREATE TABLE IF NOT EXISTS provider_configs (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
@@ -401,11 +404,11 @@ export class AdminStore {
         updated_at TEXT DEFAULT (datetime('now'))
       )
     `);
-    const count = this.state.storage.sql
+    const count = this.ctx.storage.sql
       .exec("SELECT COUNT(*) as c FROM provider_configs")
       .toArray()[0] as unknown as { c: number };
     if (count.c === 0) {
-      this.state.storage.sql.exec(
+      this.ctx.storage.sql.exec(
         `INSERT INTO provider_configs (id, name, type, model, is_default)
          VALUES (?, ?, ?, ?, 1)`,
         "prov_default_workers_ai",
@@ -432,7 +435,7 @@ export class AdminStore {
     encryption_ok: boolean;
   }> {
     this.ensureTable();
-    const rows = this.state.storage.sql
+    const rows = this.ctx.storage.sql
       .exec(
         "SELECT * FROM provider_configs ORDER BY is_default DESC, created_at DESC"
       )
@@ -448,7 +451,7 @@ export class AdminStore {
     decryptedApiKey: string | null;
   } | null> {
     this.ensureTable();
-    const row = this.state.storage.sql
+    const row = this.ctx.storage.sql
       .exec("SELECT * FROM provider_configs WHERE is_default = 1 LIMIT 1")
       .toArray()[0] as unknown as ProviderRow | undefined;
     if (!row) return null;
@@ -467,12 +470,12 @@ export class AdminStore {
 
   async setDefaultProvider(id: string): Promise<{ ok: boolean }> {
     this.ensureTable();
-    const existing = this.state.storage.sql
+    const existing = this.ctx.storage.sql
       .exec("SELECT * FROM provider_configs WHERE id = ?", id)
       .toArray()[0] as unknown as ProviderRow | undefined;
     if (!existing) throw new Error("Provider not found");
-    this.state.storage.sql.exec("UPDATE provider_configs SET is_default = 0");
-    this.state.storage.sql.exec(
+    this.ctx.storage.sql.exec("UPDATE provider_configs SET is_default = 0");
+    this.ctx.storage.sql.exec(
       "UPDATE provider_configs SET is_default = 1 WHERE id = ?",
       id
     );
@@ -548,12 +551,12 @@ export class AdminStore {
       keyIv = enc.iv;
     }
 
-    const count = this.state.storage.sql
+    const count = this.ctx.storage.sql
       .exec("SELECT COUNT(*) as c FROM provider_configs")
       .toArray()[0] as unknown as { c: number };
     const isDefault = count.c === 0 ? 1 : 0;
 
-    this.state.storage.sql.exec(
+    this.ctx.storage.sql.exec(
       `INSERT INTO provider_configs (id, name, type, model, gateway_name, base_url, encrypted_api_key, api_key_iv, is_default, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       id,
@@ -569,7 +572,7 @@ export class AdminStore {
       now
     );
 
-    const row = this.state.storage.sql
+    const row = this.ctx.storage.sql
       .exec("SELECT * FROM provider_configs WHERE id = ?", id)
       .toArray()[0] as unknown as ProviderRow;
     return Response.json(rowToConfig(row));
@@ -581,7 +584,7 @@ export class AdminStore {
     masterKey: string
   ): Promise<Response> {
     const { encryptApiKey } = await import("./lib/crypto");
-    const existing = this.state.storage.sql
+    const existing = this.ctx.storage.sql
       .exec("SELECT * FROM provider_configs WHERE id = ?", id)
       .toArray()[0] as unknown as ProviderRow | undefined;
     if (!existing) {
@@ -607,7 +610,7 @@ export class AdminStore {
       keyIv = enc.iv;
     }
 
-    this.state.storage.sql.exec(
+    this.ctx.storage.sql.exec(
       `UPDATE provider_configs SET name=?, type=?, model=?, gateway_name=?, base_url=?, encrypted_api_key=?, api_key_iv=?, updated_at=? WHERE id=?`,
       body.name ?? existing.name,
       body.type ?? existing.type,
@@ -620,21 +623,21 @@ export class AdminStore {
       id
     );
 
-    const row = this.state.storage.sql
+    const row = this.ctx.storage.sql
       .exec("SELECT * FROM provider_configs WHERE id = ?", id)
       .toArray()[0] as unknown as ProviderRow;
     return Response.json(rowToConfig(row));
   }
 
   private deleteProvider(id: string): Response {
-    const existing = this.state.storage.sql
+    const existing = this.ctx.storage.sql
       .exec("SELECT * FROM provider_configs WHERE id = ?", id)
       .toArray()[0] as unknown as ProviderRow | undefined;
     if (!existing) {
       return Response.json({ error: "Provider not found" }, { status: 404 });
     }
     if (existing.is_default) {
-      const count = this.state.storage.sql
+      const count = this.ctx.storage.sql
         .exec("SELECT COUNT(*) as c FROM provider_configs")
         .toArray()[0] as unknown as { c: number };
       if (count.c <= 1) {
@@ -643,12 +646,12 @@ export class AdminStore {
           { status: 400 }
         );
       }
-      this.state.storage.sql.exec(
+      this.ctx.storage.sql.exec(
         "UPDATE provider_configs SET is_default = 1 WHERE id != ? LIMIT 1",
         id
       );
     }
-    this.state.storage.sql.exec("DELETE FROM provider_configs WHERE id = ?", id);
+    this.ctx.storage.sql.exec("DELETE FROM provider_configs WHERE id = ?", id);
     return Response.json({ ok: true });
   }
 }
