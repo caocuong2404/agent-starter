@@ -8,20 +8,34 @@
   "assets": {
     "directory": "./public",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/agents/*", "/oauth/*"]
+    "run_worker_first": ["/agents/*", "/oauth/*", "/admin"]
   },
   "durable_objects": {
     "bindings": [
       {
         "class_name": "ChatAgent",
         "name": "ChatAgent"
+      },
+      {
+        "class_name": "AdminStore",
+        "name": "AdminStore"
       }
     ]
   },
   "migrations": [
     {
-      "new_sqlite_classes": ["ChatAgent"],
+      "new_sqlite_classes": ["ChatAgent", "AdminStore"],
       "tag": "v1"
     }
-  ]
+  ],
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true
+    }
+  },
+  "tracing": {
+    "enabled": true,
+    "sampling_rate": 1
+  }
 }

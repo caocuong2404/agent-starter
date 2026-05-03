@@ -3,7 +3,7 @@ import { useAgent } from "agents/react";
 import { useAgentChat } from "@cloudflare/ai-chat/react";
 import { getToolName, isToolUIPart, type UIMessage } from "ai";
 import type { MCPServersState } from "agents";
-import type { ChatAgent } from "./server";
+import type { ChatAgent, ProviderConfig } from "./server";
 import {
   Badge,
   Button,
@@ -242,6 +242,12 @@ function Chat() {
   const [isAddingServer, setIsAddingServer] = useState(false);
   const mcpPanelRef = useRef<HTMLDivElement>(null);
 
+  // Provider / model switcher state
+  const [providers, setProviders] = useState<ProviderConfig[]>([]);
+  const [showProviderMenu, setShowProviderMenu] = useState(false);
+  const [isSwitchingProvider, setIsSwitchingProvider] = useState(false);
+  const providerMenuRef = useRef<HTMLDivElement>(null);
+
   const agent = useAgent<ChatAgent>({
     agent: "ChatAgent",
     onOpen: useCallback(() => setConnected(true), []),
@@ -272,6 +278,14 @@ function Chat() {
     )
   });
 
+  // Load providers when agent connects
+  useEffect(() => {
+    if (!connected) return;
+    agent.stub.listProviders().then((res: { providers: ProviderConfig[] }) => {
+      setProviders(res.providers);
+    }).catch(() => {});
+  }, [connected, agent]);
+
   // Close MCP panel when clicking outside
   useEffect(() => {
     if (!showMcpPanel) return;
@@ -286,6 +300,36 @@ function Chat() {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [showMcpPanel]);
+
+  // Close provider menu when clicking outside
+  useEffect(() => {
+    if (!showProviderMenu) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (
+        providerMenuRef.current &&
+        !providerMenuRef.current.contains(e.target as Node)
+      ) {
+        setShowProviderMenu(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showProviderMenu]);
+
+  const handleSwitchProvider = async (id: string) => {
+    setIsSwitchingProvider(true);
+    try {
+      await agent.stub.setDefaultProvider(id);
+      setShowProviderMenu(false);
+      // Refresh list
+      const res = await agent.stub.listProviders();
+      setProviders(res.providers);
+    } catch (e) {
+      console.error("Failed to switch provider:", e);
+    } finally {
+      setIsSwitchingProvider(false);
+    }
+  };
 
   const handleAddServer = async () => {
     if (!mcpName.trim() || !mcpUrl.trim()) return;
@@ -449,12 +493,85 @@ function Chat() {
         <div className="max-w-3xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
             <h1 className="text-lg font-semibold text-kumo-default">
-              <span className="mr-2">⛅</span>Agent Starter
+              <span className="mr-2">⛅</span>AI Agent Gateway
             </h1>
             <Badge variant="secondary">
               <ChatCircleDotsIcon size={12} weight="bold" className="mr-1" />
               AI Chat
             </Badge>
+            {/* Model Switcher */}
+            <div className="relative" ref={providerMenuRef}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowProviderMenu(!showProviderMenu)}
+                disabled={isSwitchingProvider}
+                className="text-xs"
+              >
+                {providers.find((p) => p.is_default)?.name || "Model"}
+                <CaretDownIcon size={12} />
+              </Button>
+              {showProviderMenu && (
+                <div className="absolute left-0 top-full mt-2 w-72 z-50">
+                  <Surface className="rounded-xl ring ring-kumo-line shadow-lg overflow-hidden">
+                    <div className="p-2 border-b border-kumo-line">
+                      <Text size="xs" variant="secondary" bold>
+                        Active Model
+                      </Text>
+                    </div>
+                    <div className="p-1 max-h-64 overflow-y-auto">
+                      {providers.map((p) => (
+                        <button
+                          key={p.id}
+                          onClick={() => handleSwitchProvider(p.id)}
+                          disabled={isSwitchingProvider || p.is_default}
+                          className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
+                            p.is_default
+                              ? "bg-kumo-brand/10 text-kumo-brand"
+                              : "hover:bg-kumo-control text-kumo-default"
+                          } disabled:opacity-50`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <span className="font-medium">{p.name}</span>
+                              <div className="text-xs text-kumo-subtle mt-0.5">
+                                {p.model}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              {p.has_api_key && (
+                                <Badge variant="secondary" className="text-[10px]">
+                                  Key
+                                </Badge>
+                              )}
+                              {p.is_default && (
+                                <CircleIcon
+                                  size={8}
+                                  weight="fill"
+                                  className="text-kumo-success"
+                                />
+                              )}
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="p-2 border-t border-kumo-line">
+                      <button
+                        onClick={() => {
+                          setShowProviderMenu(false);
+                          window.open("/admin", "_blank");
+                        }}
+                        className="w-full text-left px-2 py-1.5 rounded-lg text-xs text-kumo-subtle hover:text-kumo-default hover:bg-kumo-control transition-colors"
+                      >
+                        <GearIcon size={10} className="inline mr-1" />
+                        Manage Providers
+                      </button>
+                    </div>
+                  </Surface>
+                </div>
+              )}
+            </div>
           </div>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1.5">
