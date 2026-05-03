@@ -24,8 +24,12 @@
   },
   "migrations": [
     {
-      "new_sqlite_classes": ["ChatAgent", "AdminStore"],
+      "new_sqlite_classes": ["ChatAgent"],
       "tag": "v1"
+    },
+    {
+      "new_sqlite_classes": ["AdminStore"],
+      "tag": "v2"
     }
   ],
   "observability": {
